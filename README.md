@@ -2,7 +2,7 @@
 
 In this note, I will introduce an unsupervised RL algorithm called forward backward model from the view of multi-task policy iteration. The insight is that forward backward model is essentially dynamics-only policy evaluation plus multi-task policy improvement. By factorizing reward and dynamics and only representing the dynamics of the MDP, FB model enables policy improvement step to be conducted on a family of reward functions simultaneously.
 
-Apart from the elegant math formulation, FB model can also be intuitively understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction as the self-supervision signal.
+Apart from the elegant math formulation, the training of FB model can also be intuitively understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction as the self-supervision signal and the zero-shot reward inference process can be understood as a reward weighted latent space goal retrieval process.
 
 Note: This note only covers the forward backward model formulation from a new perspective, aiming to provide intuition and understanding of the algorithm. It does not cover the optimization process (how the learning converges), is agnostic optimization algorithm involved (whether is is PPO or SAC).
 
@@ -219,7 +219,6 @@ Intuition:
 3. $z$: the projection of a reward function into the latent space
 4. $\pi(s, a, z)$: the best policy for reward whose projection is $z$
 
-Thus FB model can be understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction/occupancy measure approximation as the self-supervision signal.
+The training of FB model can be understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction/occupancy measure approximation as the self-supervision signal.
 
-
-
+The zero-shot reward inference process can be understood as a latent space goal retrieval process, where the goal is given by the sum of latent $B(s^+)$ for states $s^+$ in the buffer and weighted by the reward function.
