@@ -1,167 +1,249 @@
-# Forward Backward Model
+# 🚀 Forward Backward Model
 
-In this note, I will introduce an unsupervised RL algorithm called forward backward model from the view of multi-task policy iteration. The insight is that forward backward model is essentially dynamics-only policy evaluation plus multi-task policy improvement. By factorizing reward and dynamics and only representing the dynamics of the MDP, FB model enables policy improvement step to be conducted on a family of reward functions simultaneously.
+> **📊 Accompanying Slides**: [Google Presentation](https://docs.google.com/presentation/d/1zlipQ4Ng6hE56Xc-sLgyvqfZmZNxvvmhqCu2tsWKIco/edit?slide=id.p#slide=id.p)
+
+## 📖 Overview
+
+This tutorial introduces an **Unsupervised Reinforcement Learning Algorithm** called the Forward Backward Model through the lens of multi-task policy iteration. The key insight is that the Forward Backward (FB) model is essentially **dynamics-only policy evaluation** combined with **multi-task policy improvement**. By factorizing reward and dynamics and only representing the dynamics of the MDP, FB model enables policy improvement step to be conducted on a family of reward functions simultaneously.
 
 Apart from the elegant math formulation, the training of FB model can also be intuitively understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction as the self-supervision signal and the zero-shot reward inference process can be understood as a reward weighted latent space goal retrieval process.
 
-Note: This note only covers the forward backward model formulation from a new perspective, aiming to provide intuition and understanding of the algorithm. It does not cover the optimization process (how the learning converges), is agnostic optimization algorithm involved (whether is is PPO or SAC).
+### 📋 Scope & Limitations
 
-Some relevant papers: Meta Motivo, HILP, 
+> **Note**: This tutorial focuses on the Forward Backward model formulation from a fresh perspective, emphasizing intuition and algorithmic understanding. It does **not** cover:
+> - Optimization processes and convergence analysis
+> - Specific optimization algorithms (PPO, SAC, etc.)
 
-## Occupancy Measure and Q Function
+<!-- ### 📚 Related Work
 
-Let's start with the definition of occupancy measure and Q function.
+- **Meta Motivo**
+- **HILP**  -->
+
+## 🧮 Occupancy Measure and Q Function
+
+Before diving into the Forward Backward model, let's establish the mathematical foundations with clear definitions of occupancy measures and Q functions.
 
 ### Q Function
-The definition of the Q function:
+
+**Definition**: The Q function represents the expected discounted future reward:
 
 $$Q^{\pi}(s,a) = E_{\tau \sim \pi}[\gamma^t \cdot r(s_t)]$$
 
-where $\tau$ follows the trajectory of the MDP and following the policy.
+where $\tau$ follows the trajectory of the MDP under policy $\pi$.
 
-The bellman equation for Q function. 
+**Bellman Equation**: The recursive relationship for Q functions:
 
 $$Q^{\pi}(s,a) = r(s,a) + \gamma \cdot E_{s', a'}[Q^{\pi}(s',a')]$$
 
-The expectation is over the next state by $s' \sim P(s'|s,a)$ and the next action by $a' \sim \pi(a'|s')$.
+The expectation is taken over:
+- Next state: $s' \sim P(s'|s,a)$ 
+- Next action: $a' \sim \pi(a'|s')$
 
-Note: we define a Q function with **an MDP with reward and a policy**. It captures the discounted future reward starting from $s$ and $a$ and following the policy.
-
+> **💡 Key Point**: A Q function is defined by **an MDP with reward and a policy**. It captures the discounted future reward starting from state-action pair $(s,a)$ and following policy $\pi$.
 
 ### Occupancy Measure
-The definition of occupancy measure:
+
+**Definition**: The occupancy measure captures the expected discounted future state visitation probability:
 
 $$M^{\pi}(s^+ | s, a) = E_{\tau \sim \pi}[\gamma^t \cdot P(s_t = s^+)]$$
 
-The bellman equation for occupancy measure:
+**Bellman Equation**: The recursive relationship for occupancy measures:
 
 $$M^{\pi}(s^+ | s, a) = p(s^+ | s, a) + \gamma \cdot E_{s', a'}[M^{\pi}(s^+ | s', a')]$$
 
-here $M^{\pi}(s^+ | s, a)$ is the pdf version of the occupancy measure.
+here $M^{\pi}(s^+ | s, a)$ represents the probability density function version of the occupancy measure.
 
-Note: we define an occupancy measure with **a reward-free MDP and a policy**. It captures the discounted future distribution of the states starting from $s$ and $a$ and following the policy.
+> **💡 Key Point**: An occupancy measure is defined by **a reward-free MDP and a policy**. It captures the discounted future state distribution starting from state-action pair $(s,a)$ and following policy $\pi$.
 
-#### Relationship between Q function and occupancy measure
+#### 🔗 Relationship Between Q Function and Occupancy Measure
 
-Though the occupancy measure is defined with a reward-free MDP, given arbitrary reward function $r(s^+)$, we can use the occupancy measure to evaluate the Q function to that reward function $r(s^+)$: since the occupancy measure is the expected discounted future state distribution, we can use it to evaluate the Q function by integrating over all possible future states and weighting them by the reward function.
+The elegant connection between these concepts emerges when we consider arbitrary reward functions. Although the occupancy measure is defined for reward-free MDPs, we can use it to evaluate Q functions for any reward function $r(s^+)$:
+
 $$Q^{\pi}(s,a) = \int_{s^+} M^{\pi}(s^+ | s, a) \cdot r(s^+)$$
 
-> **An interesting derivation of the Bellman equation for occupancy measure**
+**Intuition**: Since the occupancy measure represents the expected discounted future state distribution, we can evaluate the Q function by integrating over all possible future states, weighted by their respective rewards.
+
+> **🎓 Mathematical Insight: Deriving the Occupancy Measure Bellman Equation**
 > 
-> If we write the bellman equation for Q function and replace the Q function with the occupancy measure, we get:
+> Starting with the Q function Bellman equation and substituting the occupancy measure relationship:
+> 
 > $$\int_{s^+} M^{\pi}(s^+ | s, a) \cdot r(s^+) = \int_{s^+} p(s^+ | s, a) r(s^+) + \gamma \cdot E_{s', a'}\left[ \int_{s^+} M^{\pi}(s^+ | s', a') \cdot r(s^+) \right]$$
 >
-> Let's abuse math a bit. Since the above equation should hold true for all possible reward functions $r(s^+)$, we can remove the integral among the reward function and the occupancy measure. Or more rigorously, we can use a delta function as the reward function. Both give us the same equation:
+> Since this equation must hold for **all possible reward functions** $r(s^+)$, we can factor out the reward term (mathematically, this can be proven using the properties of delta functions):
 >
 > $$M^{\pi}(s^+ | s, a) = p(s^+ | s, a) + \gamma \cdot E_{s', a'}\left[ M^{\pi}(s^+ | s', a') \right]$$
 
-## From Q-learning to Multi-task Policy Iteration
+## 🔄 From Q-Learning to Multi-Task Policy Iteration
 
-### Q-learning
+This section bridges classical reinforcement learning algorithms with our multi-task framework by progressively introducing the occupancy measure perspective.
 
-Recall the Q-learning algorithm, which does Q function bellman updates in the following form:
+### Q-Learning
 
-$$Q(s,a) \to r(s) + \gamma \max_{a'} \mathbb{E}_{s' \sim P(s'|s,a)}[Q(s',a')]$$
+**Core Update Rule**: Q-learning performs Bellman updates in the following form:
 
-In the discrete case, the Q function itself is a representation of the optimal policy, since we can take the argmax of the Q function to get the optimal action.
+$$Q(s,a) \leftarrow r(s) + \gamma \max_{a'} \mathbb{E}_{s' \sim P(s'|s,a)}[Q(s',a')]$$
+
+**Policy Extraction**: In discrete action spaces, the Q function directly represents the optimal policy:
 
 $$\pi(s) = \argmax_{a} Q(s,a)$$
 
-### DDPG
+### DDPG (Deep Deterministic Policy Gradient)
 
 In continuous action spaces, we cannot take that argmax, we need to have a policy to propose the action. If we think of argmax as a rule based selection, using a policy to propose the action is a neural approximation of the same operation.
 
-So the algorithm's splits to two steps, one evaluating the current policy and one optimizing the policy.
+So the algorithm splits to two steps, one evaluating the current policy and one optimizing the policy.
 
-$$Q(s,a) \to r(s) + \gamma \mathbb{E}_{a' \sim \pi(a'|s')} \mathbb{E}_{s' \sim P(s'|s,a)}[Q(s',a')]$$
+**Two-Step Process**:
+1. **Policy Evaluation**: 
+   $$Q(s,a) \leftarrow r(s) + \gamma \mathbb{E}_{a' \sim \pi(a'|s')} \mathbb{E}_{s' \sim P(s'|s,a)}[Q(s',a')]$$
 
-$$\mathcal{L}(\pi) = - \mathbb{E}_{s}[Q(s,a)]$$
+2. **Policy Improvement**: 
+   $$\mathcal{L}(\pi) = - \mathbb{E}_{s}[Q(s,a)]$$
 
 We abuse math notation and use the following notation to denote the policy improvement step:
-
-$$\pi(s) \to \argmax_{a} Q(s,a)$$
+$$\pi(s) \leftarrow \argmax_{a} Q(s,a)$$
 
 ### DDPG with Occupancy Measure
 
 Now we can rewrite the above DDPG with occupancy measure:
 
-$$M^\pi(s^+ | s, a) \to p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ M^\pi(s^+ | s', a') \right]$$
+1. **Dynamics Learning** (Reward-Free):
+   $$M^\pi(s^+ | s, a) \leftarrow p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ M^\pi(s^+ | s', a') \right]$$
 
-$$\pi(s) \to \argmax_{a} \int_{s^+} M^\pi(s^+ | s, a) \cdot r(s^+)$$
+2. **Policy Improvement** (Reward-Dependent):
+   $$\pi(s) \leftarrow \argmax_{a} \int_{s^+} M^\pi(s^+ | s, a) \cdot r(s^+)$$
 
 The first equation is the bellman equation for occupancy measure, it captures the policy related transition dynamics of a reward-free MDP. The second equation takes reward into account and optimizes the policy by maximizing the expected discounted future state visitation weighted by the reward it will receive at those future states.
 
-What does this new interpretation from occupancy measure perspective give us? 
-The first equation provides a way to summarize the transition dynamics of the MDP without considering rewards. This factorization allows us to learn the transition dynamics of the MDP in a reward-agnostic way, but we can still evaluate the Q function by integrating over all possible future states and weighting them by the reward function.
-Only the second equation is related to the reward, we can plug in multiple reward functions $\{r_i\}$ to the second equation and optimize for the optimal policies for each reward function simultaneously.
+What does this new interpretation from occupancy measure perspective give us?
 
-### Occupancy Measure for Multi-task Policy Iteration (Abstract Formulation)
+#### 🌟 Advantages of This Reformulation
 
-Now we can simply extend the above idea to multi-task policy iteration. Assume we are given a family of reward functions $\{r(s^+)\}$, we can learn a family of policies $\{\pi_r\}$ that each is optimal for a reward function $r$ by optimizing the following objective:
-$$M^{\pi_r}(s^+ | s, a) \to p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ M^{\pi_r}(s^+ | s', a') \right] \text{ for each } r$$
+1. **Dynamics Factorization**: The first equation provides a way to summarize the transition dynamics of the MDP without considering rewards. This factorization allows us to learn the transition dynamics of the MDP in a reward-agnostic way, but we can still evaluate the Q function by integrating over all possible future states and weighting them by the reward function.
+2. **Multi-Task Potential**: Only the second equation is related to the reward, we can plug in multiple reward functions $\{r_i\}$ to the second equation and optimize for the optimal policies for each reward function simultaneously, because the learned dynamics summary can be reused across different reward functions
 
-$$\pi_r(s) \to \argmax_{a} \int_{s^+} M^{\pi_r}(s^+ | s, a) \cdot r(s^+) \text{ for each } r$$
+### Multi-Task Policy Iteration Framework
 
-## Forward Backward Model
+**Goal**: Given a family of reward functions $\{r(s^+)\}$, learn a family of optimal policies $\{\pi_r\}$.
 
-<!-- Having laid out the foundation, we now introduce forward backward model. The goal is to provide a structured way to evaluate and optimize policies in a multi-task setting. Given a reward-free MDP, we want to unsupervisedly learn a family of reward functions and a family of policies that is optimal for these reward functions. To make a concrete algorithm, we will use a latent space $z$ to represent/index the reward function and the corresponding optimal policies. -->
+**Algorithm**:
+1. **For each reward function** $r$, learn the corresponding occupancy measure:
+   $$M^{\pi_r}(s^+ | s, a) \leftarrow p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ M^{\pi_r}(s^+ | s', a') \right]$$
 
-### Definition of Forward Backward Model
+2. **For each reward function** $r$, optimize the corresponding policy:
+   $$\pi_r(s) \leftarrow \argmax_{a} \int_{s^+} M^{\pi_r}(s^+ | s, a) \cdot r(s^+)$$
 
-Forward backward model factors the occupancy measure as:
+> **💡 Key Insight**: This framework enables us to learn multiple policies simultaneously while sharing the underlying dynamics knowledge across tasks.
+
+## 🔬 Forward Backward Model
+
+Now we introduce the core contribution: the Forward Backward model, which provides an elegant factorization for multi-task policy learning.
+
+### Mathematical Definition
+
+The Forward Backward model factorizes the occupancy measure as a product of two components:
 
 $$M^{\pi}(s^+ | s, a) = F^\pi(s, a)^T B(s^+)$$
 
-here $F^\pi(s, a)$ is the forward model and $B(s^+)$ is the backward model. Both project the state $s$ (and action $a$) to a latent vector $z$.
+**Components**:
+- **$F^\pi(s, a)$**: Forward model (policy-dependent) - projects state-action pairs to latent space
+- **$B(s^+)$**: Backward model (policy-independent) - projects states to latent space
 
-Note here $F^\pi(s, a)$ is associated with the policy and $B(s^+)$ is not associated with the policy.
+### 🎯 Intuitive Understanding
 
-Intuitively, we can think of $B$ as a encoder from state space into a latent space that captures some features of the state $s^+$. $F^\pi(s, a)$ measures the sum of discounted future latents of the policy under such an encoding scheme as dictated by $B$. We will explain more intuition of $F^\pi$ and $B$ later.
+- **$B(s^+)$**: Acts as an encoder mapping states into a meaningful latent representation that captures important state features
+- **$F^\pi(s, a)$**: Measures the expected discounted sum of future latent representations under policy $\pi$ and encoding scheme $B$
 
-### Zero-shot Policy Evaluation
+This factorization enables us to separate "where we might go" (forward dynamics) from "what makes states valuable" (backward encoding).
 
-Now our goal is to find an approach that can do multi-task policy iteration. The first step is given a learned FB model for a policy, how can we evaluate the policy when provided with a reward function?
+### ⚡ Zero-Shot Policy Evaluation
 
-Given an arbitrary policy $\pi$, and an arbitrary reward function $r(s)$, we can evaluate the policy by:
+**Problem**: Given a learned FB model and an arbitrary reward function $r(s)$, how do we evaluate any policy $\pi$?
+
+**Solution**: Use the factorized occupancy measure:
 
 $$Q^{\pi}(s,a) = \int_{s^+} M^{\pi}(s^+ | s, a) \cdot r(s^+) = F^\pi(s, a)^T \int_{s^+} B(s^+) \cdot r(s^+)$$
 
+**Key Insight**: The term $\int_{s^+} B(s^+) \cdot r(s^+)$ projects the reward function into the latent space, creating a "latent goal" representation.
+
 ### Optimal Policy Analysis
 
-Since our focus is multi-task, so we must learn a family of policies $\{\pi\}$. the desired property would be
-1. The family of policies is expressive enough to be good for a large class of reward functions.
-2. Given a reward function, the optimal policy for the reward function can be easily retrieved from the family of policies.
+**Goal**: Learn a family of policies $\{\pi\}$ with two desired properties:
+1. **Expressiveness**: Good performance across a large class of reward functions
+2. **Retrievability**: Easy identification of the optimal policy for any given reward function
 
-Now assume 1 is satisfied, how can we find the optimal policy for a given reward function? Lets further rewrite the Q function as:
+**Simplified Representation**: We can rewrite the Q function as:
 
 $$Q^{\pi}(s,a) = F^\pi(s, a)^T z$$
 
-where $z = \int_{s^+} B(s^+) \cdot r(s^+)$.
+where $z = \int_{s^+} B(s^+) \cdot r(s^+)$ represents the reward function in latent space.
 
-Naively $F^\pi(s, a)$ for the best policy is the one that aligns in direction with $z$ in the latent space.
+**Optimization Intuition**: The optimal $F^\pi(s, a)$ should align with the direction of $z$ in latent space to maximize the dot product.
 
 ...And its length be as long as possible?
 
-#### Normalization of FB Model
+#### Normalization Constraint
 
 We will get to a bit of math details here to answer the question.
 
-Recall the definition of the occupancy measure, the discounted future state distribution, so it must integrate to 1.
+**Mathematical Constraint**: Since occupancy measures represent probability distributions:
 
 $$\int_{s^+} M^{\pi}(s^+ | s, a) = 1$$
 
-Factorized by the FB model, we get:
-
-$$\int_{s^+} M^{\pi}(s^+ | s, a) =  F^\pi(s, a)^T \int_{s^+} B(s^+) = 1$$
+**Factorized Form**:
+$$F^\pi(s, a)^T \int_{s^+} B(s^+) = 1$$
 
 So let's answer the question: if we increase the length of $F^\pi(s, a)$ by a constant, wishing we find a better policy, it is not the case because we must decrease the length of $B(s^+)$ by the same constant, so it still corresponds to the same policy.
 
-There can be infinite solutions for $F^\pi(s, a)$ and $B(s^+)$ that satisfy the above equation just by scaling up/down $F$ and $B$ by the same constant. So we make it a rule that the length of $F^\pi(s, a)$ must be 1.
+**Scaling Invariance**: There can be infinite solutions for $F^\pi(s, a)$ and $B(s^+)$ that satisfy the above equation just by scaling up/down $F$ and $B$ by the same constant.
 
+**Solution**: So we make it a rule that the length of $F^\pi(s, a)$ must be 1: $||F^\pi(s, a)|| = 1$.
 
-rule: $||F^\pi(s, a)^T z|| = 1$
+**Result**: Under this constraint, the optimal policy corresponds to $F^\pi(s, a)$ being a unit vector pointing in the direction of $z$.
 
-So under this rule, we know the optimal policy for $z$ is such that $F^\pi(s, a)$ is a unit vector that points to the direction of $z$.
+### Multi-Task Policy Iteration
+
+**Objective**: Given a reward-free MDP, learn both a family of reward functions and their corresponding optimal policies using a latent space representation.
+
+#### Reward-to-Latent Mapping
+
+To make a concrete algorithm, we will use a latent space $z$ to represent/index the reward function and the corresponding optimal policies.
+
+For a FB model, we map reward functions to latent space using the backward encoder $B(s^+)$:
+
+$$z = \int_{s^+} B(s^+) \cdot r(s^+)$$
+
+This creates a "latent goal" that summarizes the reward function's preferences because states with higher rewards will have a larger weight and thus a greater influence on the latent representation.
+
+#### Policy Learning Framework
+
+**Q Function**: For policy $\pi_z$ optimized for latent goal $z$:
+$$Q^{\pi_z}(s,a) = F^{\pi_z}(s, a)^T z$$
+
+**Bellman Update**: Learn the forward dynamics:
+$$F^{\pi_z}(s, a) B(s^+) \leftarrow p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ F^{\pi_z}(s', a')^T B(s^+) \right]$$
+
+**Policy Improvement**: Optimize policy to maximize latent goal alignment:
+$$\pi_z(s) \leftarrow \argmax_{a} F^{\pi_z}(s, a)^T z$$
+
+In pratice, we use a neural network conditioned on the reward latent $z$, $F(s, a, z)$ to represent the forward model $F^{\pi_z}(s, a)$. The policy is also represented by a reward latent conditioned neural network $\pi(s, z)$.
+<!-- **Practical Implementation**:
+- **Forward Model**: $F(s, a, z)$ - Neural network conditioned on latent goal $z$
+- **Policy**: $\pi(s, z)$ - Neural network conditioned on latent goal $z$
+- **Backward Model**: $B(s^+)$ - Neural network encoder for states -->
+
+#### Geometric Interpretation
+
+Consider the visual representation of reward in state space:
+
+![Reward Distribution in State Space](reward_in_state_space.png)
+
+**Key Insights**:
+- **$z$**: Represents the "center of mass" of high-reward regions in latent space - a latent goal
+- **$F^{\pi_z}(s, a)$**: Predicts the expected sum of future latent representations
+- **Optimization Goal**: Align future latent trajectories with high-reward latent regions
+
+**Intuitive Understanding**: Maximizing $F^{\pi_z}(s, a)^T z$ encourages the policy to navigate toward states whose latent representations are similar to the high-reward region's latent representation.
 <!-- 
 ### Multi-Task Policy Iteration
 
@@ -181,44 +263,18 @@ Let's frame our goal again:
 
 Given a reward-free MDP, we want to learn a family of policies, such that given any reward function at inference time, we can find the optimal policy for the reward function. We parameterize the family of policies by $z$, and we want the policy $\pi_z$ to be the optimal policy for the reward function $r_z$. -->
 
+## 🎯 Summary
 
-### Multi-Task Policy Iteration
-Having laid out the foundation, we now introduce forward backward model for multi-task policy iteration. The goal is to provide a structured way to evaluate and optimize policies in a multi-task setting. Given a reward-free MDP, we want to unsupervisedly learn a family of reward functions and a family of policies that is optimal for these reward functions. To make a concrete algorithm, we will use a latent space $z$ to represent the reward function and the corresponding optimal policies.
+### 🧠 Core Intuitions
 
-We need a mapping from reward to the latent space. Assume we have already learned the FB model, we can use the backward encoder to map the reward function to the latent space:
-$$z = \int_{s^+} B(s^+) \cdot r(s^+) $$
+1. **$B(s^+)$**: **State-to-Latent Encoder** - Maps explicit states into a meaningful latent goal space
+2. **$F(s, a)$**: **Forward Dynamics Predictor** - Predicts future dynamics from current state in latent space
+3. **$z$**: **Latent Goal** - The projection of a reward function into the learned latent space
+4. **$\pi(s, z)$**: **Goal-Conditioned Policy** - The optimal policy for rewards whose latent projection is $z$
 
-Now the Q function for the policy $\pi_z$ is:
-$$Q^{\pi_z}(s,a) = F^{\pi_z}(s, a)^T \int_{s^+} B(s^+) \cdot r(s^+) = F^{\pi_z}(s, a)^T z$$
+### 🌟 Algorithmic Perspective
 
-The bellman update and policy improvement step is:
-$$F^{\pi_z}(s, a) B(s^+) \to p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ F^{\pi_z}(s', a')^T B(s^+) \right]$$
+The **Forward Backward model** can be understood as a **latent space goal-conditioned reinforcement learning framework** where:
 
-$$\pi_z(s) \to \argmax_{a}  F^{\pi_z}(s, a)^T z$$
-
-In pratice, we use a neural network conditioned on the reward latent $z$, $F(s, a, z)$ to represent the forward model $F^{\pi_z}(s, a)$. The policy is also represented by a reward latent conditioned neural network $\pi(s, z)$.
-
-The first equation is just bellman update for occupancy measure $M$. How to understand the second equation? Why optimizing $F$ dot-product with $z$?
-
-
-Let’s look at the thing in the argmax operator, which is the Q function.
-
-$$Q^{\pi_z}(s,a) = F^{\pi_z}(s, a)^T \int_{s^+} B(s^+) \cdot r(s^+) = F^{\pi_z}(s, a)^T z$$
-
-Consider the simple sketch of the state space below.
-![alt](reward_in_state_space.png)
-
-z is actually the sum of latent B(s) for states $s^+$ in the high reward region. It means some kind of goal in latent space.
-Since occupancy measures summarize the future probability of visiting state $s^+$ from state $s$ and action $a$, F can be understood as discounted sum of future latents. So optimizing $pi$ to increase that dot product is to make future latents be closer to the high reward region.
-
-## Summary
-
-Intuition:
-1. $B(s^+)$: maps explicit states into latent goal space
-2. $F(s, a)$: predicts forwards dynamics from current state in the latent space
-3. $z$: the projection of a reward function into the latent space
-4. $\pi(s, a, z)$: the best policy for reward whose projection is $z$
-
-The training of FB model can be understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction/occupancy measure approximation as the self-supervision signal.
-
-The zero-shot reward inference process can be understood as a latent space goal retrieval process, where the goal is given by the sum of latent $B(s^+)$ for states $s^+$ in the buffer and weighted by the reward function.
+- **Unsupervised Latent Construction**: The latent space emerges naturally through dynamics prediction and occupancy measure approximation as self-supervision.
+- **Zero-Shot Reward Inference**: Goals are computed as weighted sums of latent representations $B(s^+)$ for states in the experience buffer, weighted by the reward function.
