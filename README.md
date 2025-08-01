@@ -273,8 +273,8 @@ Given a reward-free MDP, we want to learn a family of policies, such that given 
 
 1. **$B(s^+)$**: **State-to-Latent Encoder** - Maps explicit states into a meaningful latent goal space
 2. **$F(s, a)$**: **Forward Dynamics Predictor** - Predicts future dynamics from current state in latent space
-3. **$z$**: **Latent Goal** - The projection of a reward function into the learned latent space
-4. **$\pi(s, z)$**: **Goal-Conditioned Policy** - The optimal policy for rewards whose latent projection is $z$
+3. **$z$**: **Latent Goal** - The projection of a reward function into the learned latent space, summary of a reward func’s preference
+4. **$\pi(s, z)$**: **Goal-Conditioned Policy** - The optimal policy for rewards whose latent projection is $z$, learned by maximizing alignment with z
 
 ### 🌟 Algorithmic Perspective
 
