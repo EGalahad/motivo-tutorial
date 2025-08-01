@@ -159,7 +159,7 @@ This factorization enables us to separate "where we might go" (forward dynamics)
 
 ### ⚡ Zero-Shot Policy Evaluation
 
-**Problem**: Given a learned FB model and an arbitrary reward function $r(s)$, how do we evaluate any policy $\pi$?
+**Problem**: Given a learned FB model that is associated with policy $\pi$, how do we evaluate the policy under an arbitrary reward function $r(s)$?
 
 **Solution**: Use the factorized occupancy measure:
 
