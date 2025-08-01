@@ -1,12 +1,12 @@
 # 🚀 Forward Backward Model
 
-> **📊 Accompanying Slides**: [Google Presentation](https://docs.google.com/presentation/d/1zlipQ4Ng6hE56Xc-sLgyvqfZmZNxvvmhqCu2tsWKIco/edit?slide=id.p#slide=id.p)
+> **📊 Accompanying Slides**: [Google Presentation](https://docs.google.com/presentation/d/1XfeRfmwQubKxpkz8C4dJugiHtlKoMb55R8ZWK5_LkSE)
 
 ## 📖 Overview
 
-This tutorial introduces an **Unsupervised Reinforcement Learning Algorithm** called the Forward Backward Model through the lens of multi-task policy iteration. The key insight is that the Forward Backward (FB) model is essentially **dynamics-only policy evaluation** combined with **multi-task policy improvement**. By factorizing reward and dynamics and only representing the dynamics of the MDP, FB model enables policy improvement step to be conducted on a family of reward functions simultaneously.
+This tutorial introduces an **Unsupervised Reinforcement Learning Algorithm** called the Forward Backward Model through the lens of multi-task policy iteration. The key insight is that the **occupancy measure** makes it possible to **decouple dynamics learning and value learning**, enabling, thus we can build a policy iteration that can optimize for a family of rewards at the same time. By factorizing occupancy measure with the **forward backward representation**, FB model further enables the **automatic construction of the family of rewards** and their corresponding optimal policies simultaneously.
 
-Apart from the elegant math formulation, the training of FB model can also be intuitively understood as a latent space goal conditioned reinforcement learning framework, where the latent space is automatically constructed with dynamics prediction as the self-supervision signal and the zero-shot reward inference process can be understood as a reward weighted latent space goal retrieval process.
+Apart from the elegant math formulation, the training of FB model can also be intuitively understood as a **latent space goal conditioned reinforcement learning** framework, where the latent space is automatically constructed with dynamics prediction as the self-supervision signal and the zero-shot reward inference process can be understood as a reward weighted **latent space goal retrieval** process.
 
 ### 📋 Scope & Limitations
 
@@ -45,7 +45,7 @@ The expectation is taken over:
 
 **Definition**: The occupancy measure captures the expected discounted future state visitation probability:
 
-$$M^{\pi}(s^+ | s, a) = E_{\tau \sim \pi}[\gamma^t \cdot P(s_t = s^+)]$$
+$$M^{\pi}(s^+ | s, a) = E_{\tau \sim \pi}[\sum_t \gamma^t \cdot P(s_t = s^+)]$$
 
 **Bellman Equation**: The recursive relationship for occupancy measures:
 
@@ -98,6 +98,7 @@ So the algorithm splits to two steps, one evaluating the current policy and one 
    $$Q(s,a) \leftarrow r(s) + \gamma \mathbb{E}_{a' \sim \pi(a'|s')} \mathbb{E}_{s' \sim P(s'|s,a)}[Q(s',a')]$$
 
 2. **Policy Improvement**: 
+    <!-- $$\pi(s) \leftarrow \argmax_{a} Q(s,a)$$ -->
    $$\mathcal{L}(\pi) = - \mathbb{E}_{s}[Q(s,a)]$$
 
 We abuse math notation and use the following notation to denote the policy improvement step:
@@ -224,7 +225,7 @@ $$Q^{\pi_z}(s,a) = F^{\pi_z}(s, a)^T z$$
 $$F^{\pi_z}(s, a) B(s^+) \leftarrow p(s^+ | s, a) + \gamma \mathbb{E}_{s', a'}\left[ F^{\pi_z}(s', a')^T B(s^+) \right]$$
 
 **Policy Improvement**: Optimize policy to maximize latent goal alignment:
-$$\pi_z(s) \leftarrow \argmax_{a} F^{\pi_z}(s, a)^T z$$
+$$\pi_z(s) \leftarrow \argmax_{a}\int_{s^+} F^{\pi_z}(s, a)^T B(s^+) \cdot r(s^+) = \argmax_{a} F^{\pi_z}(s, a)^T z$$
 
 In pratice, we use a neural network conditioned on the reward latent $z$, $F(s, a, z)$ to represent the forward model $F^{\pi_z}(s, a)$. The policy is also represented by a reward latent conditioned neural network $\pi(s, z)$.
 <!-- **Practical Implementation**:
@@ -242,6 +243,9 @@ Consider the visual representation of reward in state space:
 - **$z$**: Represents the "center of mass" of high-reward regions in latent space - a latent goal
 - **$F^{\pi_z}(s, a)$**: Predicts the expected sum of future latent representations
 - **Optimization Goal**: Align future latent trajectories with high-reward latent regions
+
+
+$$F(s, a) \approx \sum_t \gamma^t B(s_t) $$
 
 **Intuitive Understanding**: Maximizing $F^{\pi_z}(s, a)^T z$ encourages the policy to navigate toward states whose latent representations are similar to the high-reward region's latent representation.
 <!-- 
